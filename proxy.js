@@ -3,6 +3,7 @@ const axios = require("axios");
 const cors = require("cors");
 const { URL } = require("url");
 const bodyParser = require("body-parser");
+console.log("🔑 KEY:", process.env.SHOPIFY_API_KEY);
 require("dotenv").config();
 
 const app = express();
@@ -10,8 +11,8 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const BASE_URL = "https://cropndtop.myshopify.com/admin/api/2024-01/orders.json";
-const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
-const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
+const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY || 'fseedd97f00ae0b0cf83b3b60e8a1dc8';
+const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || 'your_secret_here';
 const REDIRECT_URI = "https://shopify-proxy-wlo0.onrender.com/auth/callback";
 const SCOPES = "read_orders,write_orders";
 
