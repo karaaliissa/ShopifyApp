@@ -14,7 +14,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // ✅ CONFIG
-const API_SECRET = process.env.API_SECRET || 'your-very-strong-secret-token';
+const API_SECRET = process.env.API_SECRET || 'd172de1719f2ae3a0a1964e7b65fe505';
 const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN;
 const ALLOWED_IPS = (process.env.ALLOWED_IPS || '').split(',').map(ip => ip.trim());
 
@@ -49,11 +49,6 @@ app.use('/api/', rateLimit({
 
 // IP Allowlist
 app.use('/api/', (req, res, next) => {
-  const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-  if (ALLOWED_IPS.length && !ALLOWED_IPS.includes(ip)) {
-    console.warn(`🚨 Blocked IP: ${ip}`);
-    return res.status(403).json({ error: 'Forbidden - IP not allowed' });
-  }
   next();
 });
 
