@@ -10,22 +10,8 @@ require("dotenv").config();
 
 const app = express();
 
-// ✅ This must be before any route that expects JSON body
+// ✅ Parse JSON bodies
 app.use(bodyParser.json());
-
-// ✅ LOGIN route — now it will correctly parse body!
-app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-
-  if (username !== process.env.ADMIN_USERNAME)
-    return res.status(401).json({ error: 'Invalid credentials' });
-
-  const valid = await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
-  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-
-  const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '2h' });
-  res.json({ token });
-});
 
 // ✅ CONFIG
 const API_SECRET = process.env.API_SECRET || 'your-very-strong-secret-token';
@@ -39,13 +25,29 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'X-App-Token', 'Authorization']
 }));
 
-// ✅ Rate Limiting
+// ✅ LOGIN route — keep this outside all secure middlewares
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (username !== process.env.ADMIN_USERNAME)
+    return res.status(401).json({ error: 'Invalid credentials' });
+
+  const valid = await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
+  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+  const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '2h' });
+  res.json({ token });
+});
+
+// ✅ Secure Middlewares (only affect remaining /api/* routes)
+
+// Rate Limit
 app.use('/api/', rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 50
 }));
 
-// ✅ Middleware: IP Allowlist
+// IP Allowlist
 app.use('/api/', (req, res, next) => {
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
   if (ALLOWED_IPS.length && !ALLOWED_IPS.includes(ip)) {
@@ -55,7 +57,7 @@ app.use('/api/', (req, res, next) => {
   next();
 });
 
-// ✅ Middleware: Token Authentication (App token)
+// App Token Check
 app.use('/api/', (req, res, next) => {
   const token = req.headers['x-app-token'];
   if (token !== API_SECRET) {
@@ -64,7 +66,7 @@ app.use('/api/', (req, res, next) => {
   next();
 });
 
-// ✅ Middleware: JWT Authentication (Admin login)
+// JWT Auth Check
 app.use('/api/', (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader?.split(' ')[1];
@@ -78,4 +80,14 @@ app.use('/api/', (req, res, next) => {
   } catch {
     res.status(403).json({ error: 'Invalid or expired token' });
   }
+});
+
+// ✅ You can add secured routes here (e.g. /api/orders etc.)
+// Example:
+// app.get('/api/test', (req, res) => res.json({ message: "Protected route success" }));
+
+// ✅ Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
