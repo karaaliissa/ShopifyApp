@@ -206,6 +206,9 @@ app.get('/api/unpaid-order-count', async (req, res) => {
   }
 });
 
+app.get("/", (req, res) => {
+  res.send("✅ Shopify proxy is running");
+});
 // ========================
 // ✅ Start Server
 // ========================
