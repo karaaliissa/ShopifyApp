@@ -73,7 +73,7 @@ function extractNextPageInfo(linkHeader) {
 // =============================
 // 📦 Orders - List & Pagination
 // =============================
-app.get("/api/orders", async (req, res) => {
+app.get("/orders-dashboard/orders", async (req, res) => {
   const shop = req.query.shop;
   const token = shopTokens[shop];
   if (!token) return res.status(401).json({ error: "Missing token for shop" });
