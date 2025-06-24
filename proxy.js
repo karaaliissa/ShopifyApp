@@ -9,7 +9,8 @@ require("dotenv").config();
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
-
+const path = require("path");
+app.use(express.static(path.join(__dirname, 'dist')));
 const BASE_URL = "https://cropndtop.myshopify.com/admin/api/2024-01/orders.json";
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY || 'fseedd97f00ae0b0cf83b3b60e8a1dc8';
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || 'your_secret_here';
@@ -207,7 +208,18 @@ app.get('/api/unpaid-order-count', async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.send("✅ Shopify proxy is running");
+  const shop = req.query.shop;
+
+  if (!shop) return res.status(400).send("Missing shop parameter");
+
+  if (!shopTokens[shop]) {
+    return res.redirect(`/auth?shop=${shop}`);
+  }
+
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 // ========================
 // ✅ Start Server
