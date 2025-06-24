@@ -1,59 +1,82 @@
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
-const { URL } = require("url");
+const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
+const { URL } = require("url");
+require("dotenv").config();
 
 const app = express();
-app.use(cors());
+
+// ✅ Security Middleware
+const API_SECRET = process.env.API_SECRET || 'your-very-strong-secret-token';
+const SHOPIFY_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || 'shpat_...';
+
 app.use(bodyParser.json());
 
-const BASE_URL = "https://cropndtop.myshopify.com/admin/api/2024-01/orders.json";
-require('dotenv').config();
-const TOKEN = process.env.SHOPIFY_TOKEN;
+// ✅ CORS only for trusted domain(s)
+const corsOptions = {
+  origin: ['https://karaaliissa.github.io'],
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'X-App-Token']
+};
+app.use(cors(corsOptions));
+
+// ✅ Rate limit
+app.use('/api/', rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 50
+}));
+
+// ✅ Token check
+app.use('/api/', (req, res, next) => {
+  const token = req.headers['x-app-token'];
+  if (token !== API_SECRET) {
+    return res.status(403).json({ error: 'Forbidden - Invalid token' });
+  }
+  next();
+});
+
+const BASE_URL = 'https://cropndtop.myshopify.com/admin/api/2024-01/orders.json';
 
 function extractNextPageInfo(linkHeader) {
   if (!linkHeader) return null;
   const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-  if (!match || match.length < 2) return null;
-  try {
-    const nextUrl = new URL(match[1]);
-    return nextUrl.searchParams.get("page_info");
-  } catch (err) {
-    console.error("❌ Invalid link header format:", match[1]);
-    return null;
-  }
+  if (!match) return null;
+  return new URL(match[1]).searchParams.get('page_info');
 }
+
+// ====================== ROUTES ======================
 
 app.get("/api/orders", async (req, res) => {
   const pageInfo = req.query.page_info;
   const url = pageInfo
     ? `${BASE_URL}?limit=100&page_info=${pageInfo}`
     : `${BASE_URL}?limit=100&status=any`;
-  console.log("➡️ Fetching:", url);
 
   try {
     const response = await axios.get(url, {
       headers: {
-        "X-Shopify-Access-Token": TOKEN,
-        "Content-Type": "application/json",
-      },
+        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'Content-Type': 'application/json'
+      }
     });
 
+    const orders = response.data.orders || [];
     const nextPageInfo = extractNextPageInfo(response.headers.link);
 
     res.json({
-      orders: response.data.orders.map((order) => ({
+      orders: orders.map(order => ({
         ...order,
-        device: (order.note_attributes || []).find((a) => a.name === "device")?.value || "Unknown",
-        source: (order.note_attributes || []).find((a) => a.name === "source")?.value || "Unknown",
-        channel: order.source_name || "Unknown",
+        device: (order.note_attributes || []).find(a => a.name === 'device')?.value || 'Unknown',
+        source: (order.note_attributes || []).find(a => a.name === 'source')?.value || 'Unknown',
+        channel: order.source_name || 'Unknown',
       })),
-      nextPageInfo,
+      nextPageInfo
     });
-  } catch (error) {
-    console.error("Shopify pagination error:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch paginated orders" });
+  } catch (err) {
+    console.error('Orders error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
 
@@ -63,21 +86,39 @@ app.get("/api/orders/count", async (req, res) => {
       "https://cropndtop.myshopify.com/admin/api/2024-01/orders/count.json",
       {
         headers: {
-          "X-Shopify-Access-Token": TOKEN,
-          "Content-Type": "application/json",
-        },
+          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+          "Content-Type": "application/json"
+        }
       }
     );
     res.json(response.data);
-  } catch (error) {
-    console.error("Error fetching order count:", error.message);
-    res.status(500).json({ error: "Failed to fetch order count" });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch order count' });
+  }
+});
+
+app.get("/api/unpaid-order-count", async (req, res) => {
+  try {
+    const response = await axios.get(
+      "https://cropndtop.myshopify.com/admin/api/2024-01/orders/count.json?status=any&financial_status=pending",
+      {
+        headers: {
+          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    res.json({ count: response.data.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch unpaid order count' });
   }
 });
 
 app.post("/api/save-order-tag", async (req, res) => {
-  const { orderId, tag, financial_status, fulfillment_status } = req.body;
-  if (!orderId || !tag) return res.status(400).json({ error: "orderId and tag are required" });
+  const { orderId, tag, financial_status, fulfillment_status, line_items } = req.body;
+
+  if (!orderId || !tag)
+    return res.status(400).json({ error: "orderId and tag are required" });
 
   try {
     await axios.put(
@@ -85,103 +126,57 @@ app.post("/api/save-order-tag", async (req, res) => {
       { order: { id: orderId, tags: tag } },
       {
         headers: {
-          "X-Shopify-Access-Token": TOKEN,
-          "Content-Type": "application/json",
-        },
+          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+          "Content-Type": "application/json"
+        }
       }
     );
 
+    // ✅ Fulfill if needed
     if (tag === "Shipped" && (!fulfillment_status || fulfillment_status === "unfulfilled")) {
       const fulfillmentOrdersRes = await axios.get(
         `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}/fulfillment_orders.json`,
         {
           headers: {
-            "X-Shopify-Access-Token": TOKEN,
-            "Content-Type": "application/json",
-          },
+            "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+            "Content-Type": "application/json"
+          }
         }
       );
 
-      const openFulfillmentOrders = (fulfillmentOrdersRes.data.fulfillment_orders || []).filter(
-        (fo) => fo.status !== "closed"
-      );
+      const openOrders = (fulfillmentOrdersRes.data.fulfillment_orders || []).filter(fo => fo.status !== 'closed');
 
-      if (openFulfillmentOrders.length > 0) {
-        const fulfillment = {
-          fulfillment: {
-            message: "Shipped via API",
-            notify_customer: false,
-            line_items_by_fulfillment_order: openFulfillmentOrders.map((fo) => ({
-              fulfillment_order_id: fo.id,
-            })),
-          },
-        };
-
+      if (openOrders.length) {
         await axios.post(
           `https://cropndtop.myshopify.com/admin/api/2024-01/fulfillments.json`,
-          fulfillment,
+          {
+            fulfillment: {
+              message: "Shipped via dashboard",
+              notify_customer: false,
+              line_items_by_fulfillment_order: openOrders.map(fo => ({
+                fulfillment_order_id: fo.id
+              }))
+            }
+          },
           {
             headers: {
-              "X-Shopify-Access-Token": TOKEN,
-              "Content-Type": "application/json",
-            },
+              "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+              "Content-Type": "application/json"
+            }
           }
         );
-      } else {
-        console.log(`⚠️ No open fulfillment orders for order ${orderId}, skipping fulfillment.`);
       }
     }
 
-    if (tag === "Completed") {
-      // ✅ Fetch order total amount
-      const orderDetailsRes = await axios.get(
-        `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}.json`,
-        {
-          headers: {
-            "X-Shopify-Access-Token": TOKEN,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    
-      const order = orderDetailsRes.data.order;
-      const amount = parseFloat(order.total_price);
-    
-      // ✅ Force manual transaction to mark as paid
-      await axios.post(
-        `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}/transactions.json`,
-        {
-          transaction: {
-            kind: "capture",       // use "capture" for consistency
-            status: "success",     // must be "success"
-            amount: amount,        // dynamic order amount
-            gateway: "manual",     // required for manual (COD) payments
-          },
-        },
-        {
-          headers: {
-            "X-Shopify-Access-Token": TOKEN,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    
-      console.log(`✅ Forced manual payment recorded for order ${orderId}`);
-    }
-    
-
-    res.json({ success: true, updatedTag: tag });
+    res.json({ success: true });
   } catch (err) {
-    console.error("❌ Failed to update order:", {
-      status: err.response?.status,
-      data: err.response?.data,
-      headers: err.response?.headers,
-    });
-    res.status(500).json({ error: "Failed to update tag/payment/fulfillment" });
+    console.error('Save order error:', err.message);
+    res.status(500).json({ error: 'Failed to update tag or fulfillment' });
   }
 });
+
 app.get("/api/tag-counts", async (req, res) => {
-  const allOrders = [];
+  let allOrders = [];
   let pageInfo = null;
 
   try {
@@ -192,63 +187,30 @@ app.get("/api/tag-counts", async (req, res) => {
 
       const response = await axios.get(url, {
         headers: {
-          "X-Shopify-Access-Token": TOKEN,
-          "Content-Type": "application/json",
-        },
+          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+          "Content-Type": "application/json"
+        }
       });
 
-      const orders = response.data.orders || [];
-      allOrders.push(...orders);
-
-      const linkHeader = response.headers.link;
-      pageInfo = extractNextPageInfo(linkHeader);
+      allOrders.push(...response.data.orders);
+      pageInfo = extractNextPageInfo(response.headers.link);
     } while (pageInfo);
 
     const tagCounts = {};
-    let totalOrders = allOrders.length;
-
     for (const order of allOrders) {
-      const tags = (order.tags || "").split(",").map((t) => t.trim()).filter(t => t !== "");
-      if (tags.length === 0) {
-        tagCounts["Pending"] = (tagCounts["Pending"] || 0) + 1;
-      } else {
-        for (const tag of tags) {
-          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-        }
-      }
-      
+      const tags = (order.tags || "").split(',').map(t => t.trim()).filter(Boolean);
+      if (tags.length === 0) tagCounts['Pending'] = (tagCounts['Pending'] || 0) + 1;
+      else tags.forEach(t => tagCounts[t] = (tagCounts[t] || 0) + 1);
     }
 
-    res.json({
-      total: totalOrders,
-      countsByTag: tagCounts,
-    });
-  } catch (error) {
-    console.error("❌ Failed to count tags:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch tag counts" });
-  }
-});
-
-// app.listen(3000, () => {
-//   console.log("✅ Proxy running on http://localhost:3000");
-// });
-app.get('/api/unpaid-order-count', async (req, res) => {
-  try {
-    const response = await fetch('https://cropndtop.myshopify.com/admin/api/2024-01/orders/count.json?status=any&financial_status=pending', {
-      headers: {
-        'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const data = await response.json();
-    res.json({ count: data.count });
+    res.json({ total: allOrders.length, countsByTag: tagCounts });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch unpaid order count' });
+    res.status(500).json({ error: 'Failed to fetch tag counts' });
   }
 });
 
+// ====================== START ======================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Proxy running on port ${PORT}`);
+  console.log(`✅ Secure proxy running on port ${PORT}`);
 });
