@@ -19,7 +19,12 @@ const SCOPES = "read_orders,write_orders";
 
 
 const shopTokens = {}; // 🔐 In-memory storage for shop tokens
-
+app.use((req, res, next) => {
+  if (req.url.includes("//")) {
+    return res.status(400).send("Bad request: double slashes in URL");
+  }
+  next();
+});
 // =======================
 // 🔐 Shopify OAuth Routes
 // =======================
