@@ -8,27 +8,12 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 require("dotenv").config();
 
-
 const app = express();
+
+// ✅ This must be before any route that expects JSON body
 app.use(bodyParser.json());
 
-// ✅ CONFIG
-const API_SECRET = process.env.API_SECRET || 'your-very-strong-secret-token';
-const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN;
-const ALLOWED_IPS = (process.env.ALLOWED_IPS || '').split(',').map(ip => ip.trim());
-
-// ✅ CORS — production frontend only
-app.use(cors({
-  origin: ['https://karaaliissa.github.io'],
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'X-App-Token']
-}));
-
-// ✅ Rate Limiting
-app.use('/api/', rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: 50
-}));
+// ✅ LOGIN route — now it will correctly parse body!
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
@@ -41,6 +26,25 @@ app.post('/login', async (req, res) => {
   const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '2h' });
   res.json({ token });
 });
+
+// ✅ CONFIG
+const API_SECRET = process.env.API_SECRET || 'your-very-strong-secret-token';
+const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN;
+const ALLOWED_IPS = (process.env.ALLOWED_IPS || '').split(',').map(ip => ip.trim());
+
+// ✅ CORS — only allow frontend origin
+app.use(cors({
+  origin: ['https://karaaliissa.github.io'],
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'X-App-Token', 'Authorization']
+}));
+
+// ✅ Rate Limiting
+app.use('/api/', rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 50
+}));
+
 // ✅ Middleware: IP Allowlist
 app.use('/api/', (req, res, next) => {
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
@@ -51,7 +55,7 @@ app.use('/api/', (req, res, next) => {
   next();
 });
 
-// ✅ Middleware: Token Authentication
+// ✅ Middleware: Token Authentication (App token)
 app.use('/api/', (req, res, next) => {
   const token = req.headers['x-app-token'];
   if (token !== API_SECRET) {
@@ -59,6 +63,8 @@ app.use('/api/', (req, res, next) => {
   }
   next();
 });
+
+// ✅ Middleware: JWT Authentication (Admin login)
 app.use('/api/', (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader?.split(' ')[1];
