@@ -80,6 +80,63 @@ app.use('/api/', (req, res, next) => {
 // ✅ You can add secured routes here (e.g. /api/orders etc.)
 // Example:
 // app.get('/api/test', (req, res) => res.json({ message: "Protected route success" }));
+// ✅ Get all orders
+app.get('/api/orders', async (req, res) => {
+  try {
+    const response = await axios.get('https://cropndtop.myshopify.com/admin/api/2024-01/orders.json?limit=100&status=any', {
+      headers: {
+        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({ orders: response.data.orders });
+  } catch (err) {
+    console.error('Error fetching orders:', err.message);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+app.get('/api/orders/count', async (req, res) => {
+  try {
+    const response = await axios.get('https://cropndtop.myshopify.com/admin/api/2024-01/orders/count.json', {
+      headers: {
+        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({ count: response.data.count });
+  } catch (err) {
+    console.error('Error fetching count:', err.message);
+    res.status(500).json({ error: 'Failed to fetch order count' });
+  }
+});
+app.get('/api/tag-counts', async (req, res) => {
+  try {
+    const response = await axios.get('https://cropndtop.myshopify.com/admin/api/2024-01/orders.json?limit=100&status=any', {
+      headers: {
+        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const tagCounts = {};
+    response.data.orders.forEach(order => {
+      (order.tags || '').split(',').forEach(tag => {
+        const t = tag.trim();
+        if (t) tagCounts[t] = (tagCounts[t] || 0) + 1;
+      });
+    });
+
+    res.json({
+      total: response.data.orders.length,
+      countsByTag: tagCounts
+    });
+  } catch (err) {
+    console.error('Error getting tag counts:', err.message);
+    res.status(500).json({ error: 'Failed to count tags' });
+  }
+});
 
 // ✅ Start server
 const PORT = process.env.PORT || 3000;
