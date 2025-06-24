@@ -232,6 +232,22 @@ app.get("/api/tag-counts", async (req, res) => {
 // app.listen(3000, () => {
 //   console.log("✅ Proxy running on http://localhost:3000");
 // });
+app.get('/api/unpaid-order-count', async (req, res) => {
+  try {
+    const response = await fetch('https://cropndtop.myshopify.com/admin/api/2024-01/orders/count.json?status=any&financial_status=pending', {
+      headers: {
+        'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+    res.json({ count: data.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch unpaid order count' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Proxy running on port ${PORT}`);
