@@ -4,7 +4,10 @@ const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const { URL } = require("url");
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 require("dotenv").config();
+
 
 const app = express();
 app.use(bodyParser.json());
@@ -26,7 +29,18 @@ app.use('/api/', rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 50
 }));
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
 
+  if (username !== process.env.ADMIN_USERNAME)
+    return res.status(401).json({ error: 'Invalid credentials' });
+
+  const valid = await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
+  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+  const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '2h' });
+  res.json({ token });
+});
 // ✅ Middleware: IP Allowlist
 app.use('/api/', (req, res, next) => {
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
@@ -44,4 +58,18 @@ app.use('/api/', (req, res, next) => {
     return res.status(403).json({ error: 'Forbidden - Invalid token' });
   }
   next();
+});
+app.use('/api/', (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: 'Missing token' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(403).json({ error: 'Invalid or expired token' });
+  }
 });
