@@ -14,7 +14,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // ✅ LOGIN route — now it will correctly parse body!
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
 
   if (username !== process.env.ADMIN_USERNAME)
