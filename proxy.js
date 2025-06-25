@@ -169,6 +169,108 @@ app.get("/api/tag-counts", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch tag counts" });
   }
 });
+app.post("/api/save-order-tag", async (req, res) => {
+  const { orderId, tag, financial_status, fulfillment_status } = req.body;
+  if (!orderId || !tag) return res.status(400).json({ error: "orderId and tag are required" });
+
+  try {
+    await axios.put(
+      `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}.json`,
+      { order: { id: orderId, tags: tag } },
+      {
+        headers: {
+          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (tag === "Shipped" && (!fulfillment_status || fulfillment_status === "unfulfilled")) {
+      const fulfillmentOrdersRes = await axios.get(
+        `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}/fulfillment_orders.json`,
+        {
+          headers: {
+            "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const openFulfillmentOrders = (fulfillmentOrdersRes.data.fulfillment_orders || []).filter(
+        (fo) => fo.status !== "closed"
+      );
+
+      if (openFulfillmentOrders.length > 0) {
+        const fulfillment = {
+          fulfillment: {
+            message: "Shipped via API",
+            notify_customer: false,
+            line_items_by_fulfillment_order: openFulfillmentOrders.map((fo) => ({
+              fulfillment_order_id: fo.id,
+            })),
+          },
+        };
+
+        await axios.post(
+          `https://cropndtop.myshopify.com/admin/api/2024-01/fulfillments.json`,
+          fulfillment,
+          {
+            headers: {
+              "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      } else {
+        console.log(`⚠️ No open fulfillment orders for order ${orderId}, skipping fulfillment.`);
+      }
+    }
+
+    if (tag === "Completed") {
+      const orderDetailsRes = await axios.get(
+        `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}.json`,
+        {
+          headers: {
+            "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const order = orderDetailsRes.data.order;
+      const amount = parseFloat(order.total_price);
+
+      await axios.post(
+        `https://cropndtop.myshopify.com/admin/api/2024-01/orders/${orderId}/transactions.json`,
+        {
+          transaction: {
+            kind: "capture",
+            status: "success",
+            amount: amount,
+            gateway: "manual",
+          },
+        },
+        {
+          headers: {
+            "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log(`✅ Forced manual payment recorded for order ${orderId}`);
+    }
+
+    res.json({ success: true, updatedTag: tag });
+  } catch (err) {
+    console.error("❌ Failed to update order:", {
+      status: err.response?.status,
+      data: err.response?.data,
+      headers: err.response?.headers,
+    });
+    res.status(500).json({ error: "Failed to update tag/payment/fulfillment" });
+  }
+});
 
 // ✅ Start server
 const PORT = process.env.PORT || 3000;
