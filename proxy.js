@@ -1,4 +1,5 @@
 const express = require("express");
+app.set('trust proxy', 1);
 const axios = require("axios");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
@@ -9,8 +10,10 @@ const bcrypt = require('bcrypt');
 require("dotenv").config();
 
 async function enrichOrdersWithImages(orders) {
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   for (const order of orders) {
     for (const item of order.line_items || []) {
+      await delay(300);
       try {
         const productRes = await axios.get(
           `https://cropndtop.myshopify.com/admin/api/2024-01/products/${item.product_id}.json`,
@@ -122,7 +125,8 @@ app.get('/api/orders', async (req, res) => {
       }
     });
 
-    const orders = response.data.orders || [];
+    // const orders = response.data.orders || [];
+    const orders = response.data.orders.slice(0, 10);
     const productImageCache = new Map();
 
     for (const order of orders) {
