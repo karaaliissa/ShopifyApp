@@ -111,32 +111,6 @@ app.get('/api/orders/count', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch order count' });
   }
 });
-app.get('/api/tag-counts', async (req, res) => {
-  try {
-    const response = await axios.get('https://cropndtop.myshopify.com/admin/api/2024-01/orders.json?limit=100&status=any', {
-      headers: {
-        'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const tagCounts = {};
-    response.data.orders.forEach(order => {
-      (order.tags || '').split(',').forEach(tag => {
-        const t = tag.trim();
-        if (t) tagCounts[t] = (tagCounts[t] || 0) + 1;
-      });
-    });
-
-    res.json({
-      total: response.data.orders.length,
-      countsByTag: tagCounts
-    });
-  } catch (err) {
-    console.error('Error getting tag counts:', err.message);
-    res.status(500).json({ error: 'Failed to count tags' });
-  }
-});
 
 // ✅ Start server
 const PORT = process.env.PORT || 3000;
