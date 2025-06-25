@@ -8,6 +8,31 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 require("dotenv").config();
 
+async function enrichOrdersWithImages(orders) {
+  for (const order of orders) {
+    for (const item of order.line_items || []) {
+      try {
+        const productRes = await axios.get(
+          `https://cropndtop.myshopify.com/admin/api/2024-01/products/${item.product_id}.json`,
+          {
+            headers: {
+              'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const image = productRes.data.product?.image?.src;
+        item.image = image || null;
+
+      } catch (err) {
+        console.error(`⚠️ Failed to fetch image for product ${item.product_id}:`, err.message);
+        item.image = null;
+      }
+    }
+  }
+  return orders;
+}
 const app = express();
 
 // ✅ Parse JSON bodies
@@ -97,12 +122,51 @@ app.get('/api/orders', async (req, res) => {
       }
     });
 
-    res.json({ orders: response.data.orders });
+    const orders = response.data.orders || [];
+    const productImageCache = new Map();
+
+    for (const order of orders) {
+      for (const item of order.line_items || []) {
+        const productId = item.product_id;
+
+        if (!productId) {
+          item.image = null;
+          continue;
+        }
+
+        // Use cached product image if available
+        if (productImageCache.has(productId)) {
+          item.image = productImageCache.get(productId);
+        } else {
+          try {
+            const productRes = await axios.get(
+              `https://cropndtop.myshopify.com/admin/api/2024-01/products/${productId}.json`,
+              {
+                headers: {
+                  'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+
+            const imageSrc = productRes.data.product?.image?.src || null;
+            productImageCache.set(productId, imageSrc);
+            item.image = imageSrc;
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch product ${productId} image:`, err.message);
+            item.image = null;
+          }
+        }
+      }
+    }
+
+    res.json({ orders });
   } catch (err) {
     console.error('Error fetching orders:', err.message);
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
+
 app.get('/api/orders/count', async (req, res) => {
   try {
     const response = await axios.get('https://cropndtop.myshopify.com/admin/api/2024-01/orders/count.json', {
