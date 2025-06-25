@@ -1,5 +1,7 @@
 const express = require("express");
-app.set('trust proxy', 1);
+const app = express();        // ✅ initialize first
+app.set('trust proxy', 1);    // ✅ then set trust proxy
+
 const axios = require("axios");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
@@ -36,7 +38,7 @@ async function enrichOrdersWithImages(orders) {
   }
   return orders;
 }
-const app = express();
+// const app = express();
 
 // ✅ Parse JSON bodies
 app.use(bodyParser.json());
