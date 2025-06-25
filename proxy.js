@@ -17,6 +17,8 @@ app.use(bodyParser.json());
 const API_SECRET = process.env.API_SECRET || 'd172de1719f2ae3a0a1964e7b65fe505';
 const SHOPIFY_TOKEN = process.env.SHOPIFY_TOKEN;
 const ALLOWED_IPS = (process.env.ALLOWED_IPS || '').split(',').map(ip => ip.trim());
+const BASE_URL = 'https://cropndtop.myshopify.com/admin/api/2024-01/orders.json';
+
 
 // ✅ CORS — only allow frontend origin
 app.use(cors({
@@ -76,6 +78,11 @@ app.use('/api/', (req, res, next) => {
     res.status(403).json({ error: 'Invalid or expired token' });
   }
 });
+function extractNextPageInfo(linkHeader) {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>; rel="next"/);
+  return match ? match[1] : null;
+}
 
 // ✅ You can add secured routes here (e.g. /api/orders etc.)
 // Example:
@@ -109,6 +116,57 @@ app.get('/api/orders/count', async (req, res) => {
   } catch (err) {
     console.error('Error fetching count:', err.message);
     res.status(500).json({ error: 'Failed to fetch order count' });
+  }
+});
+app.get("/api/tag-counts", async (req, res) => {
+  const allOrders = [];
+  let pageInfo = null;
+
+  try {
+    do {
+      const url = pageInfo
+        ? `${BASE_URL}?limit=100&page_info=${pageInfo}`
+        : `${BASE_URL}?limit=100&status=any`;
+
+      const response = await axios.get(url, {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const orders = response.data.orders || [];
+      allOrders.push(...orders);
+
+      const linkHeader = response.headers.link;
+      pageInfo = extractNextPageInfo(linkHeader);
+    } while (pageInfo);
+
+    const tagCounts = {};
+    let totalOrders = allOrders.length;
+
+    for (const order of allOrders) {
+      const tags = (order.tags || "")
+        .split(",")
+        .map(t => t.trim())
+        .filter(t => t !== "");
+
+      if (tags.length === 0) {
+        tagCounts["Pending"] = (tagCounts["Pending"] || 0) + 1;
+      } else {
+        for (const tag of tags) {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        }
+      }
+    }
+
+    res.json({
+      total: totalOrders,
+      countsByTag: tagCounts,
+    });
+  } catch (error) {
+    console.error("❌ Failed to count tags:", error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to fetch tag counts" });
   }
 });
 
