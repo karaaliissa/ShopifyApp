@@ -128,7 +128,7 @@ app.get('/api/orders', async (req, res) => {
     });
 
     // const orders = response.data.orders || [];
-    const orders = response.data.orders.slice(0, 10);
+    const orders = response.data.orders.slice(0, 100);
     const productImageCache = new Map();
 
     for (const order of orders) {
