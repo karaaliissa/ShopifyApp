@@ -142,11 +142,14 @@ app.get('/api/orders', async (req, res) => {
 
         // Use cached product image if available
         if (productImageCache.has(productId)) {
-          item.image = productImageCache.get(productId);
+          const cached = productImageCache.get(productId);
+          item.image = cached.image;
+          item.tailor = cached.tailor;
+        
         } else {
           try {
             const productRes = await axios.get(
-              `https://cropndtop.myshopify.com/admin/api/2024-01/products/${productId}.json`,
+              `https://cropndtop.myshopify.com/admin/api/2024-01/products/${productId}.json?fields=id,image,title`,
               {
                 headers: {
                   'X-Shopify-Access-Token': SHOPIFY_TOKEN,
@@ -154,10 +157,30 @@ app.get('/api/orders', async (req, res) => {
                 }
               }
             );
+            
+            const metafieldsRes = await axios.get(
+              `https://cropndtop.myshopify.com/admin/api/2024-01/products/${productId}/metafields.json`,
+              {
+                headers: {
+                  'X-Shopify-Access-Token': SHOPIFY_TOKEN,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            const tailorMetafield = metafieldsRes.data.metafields.find(mf => mf.namespace === 'custom' && mf.key === 'tailor');
+            item.tailor = tailorMetafield?.value || null;
+            
 
             const imageSrc = productRes.data.product?.image?.src || null;
-            productImageCache.set(productId, imageSrc);
+            // productImageCache.set(productId, imageSrc);
+            // item.image = imageSrc;
+            productImageCache.set(productId, {
+              image: imageSrc,
+              tailor: tailorMetafield?.value || null
+            });
             item.image = imageSrc;
+            item.tailor = tailorMetafield?.value || null;
           } catch (err) {
             console.warn(`⚠️ Failed to fetch product ${productId} image:`, err.message);
             item.image = null;
